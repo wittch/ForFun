@@ -1,9 +1,12 @@
+#define _CRT_SECURE_NO_WARNINGS
 #include<iostream>
 #include<conio.h>
 #include<windows.h>
+#include<sstream>
+
 
 #define INF 9999
-
+#define BUF_SIZE 1023
 using namespace std;
 
 bool IsRunning = true;
@@ -15,7 +18,14 @@ int Snake_length = 5;
 int snake_food = -1;
 int keyCode;
 int Map[102][102];
-
+static int g_nScreenIndex;
+static HANDLE g_hScreen[2];
+int g_numOfFrame;
+int g_numOfFPS;
+char* FPSTextInfo;
+clock_t OldTime;
+clock_t CurTime;
+//ostringstream FPSTextInfo;
 
 void CursorView(char show)
 {
@@ -25,6 +35,44 @@ void CursorView(char show)
 	ConsoleCursor.bVisible = show;
 	ConsoleCursor.dwSize = 1;
 	SetConsoleCursorInfo(hConsole, &ConsoleCursor);
+}
+void ScreenInit()
+{
+	CONSOLE_CURSOR_INFO cci;
+	g_hScreen[0] = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, NULL, CONSOLE_TEXTMODE_BUFFER, NULL);
+	g_hScreen[1] = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, NULL, CONSOLE_TEXTMODE_BUFFER, NULL);
+
+	cci.dwSize = 1;
+	cci.bVisible = FALSE;
+	SetConsoleCursorInfo(g_hScreen[0], &cci);
+	SetConsoleCursorInfo(g_hScreen[1], &cci);
+}
+void ScreenFlipping()
+{
+	SetConsoleActiveScreenBuffer(g_hScreen[g_nScreenIndex]);
+	g_nScreenIndex = !g_nScreenIndex;
+}
+void ScreenClear()
+{
+	COORD Coor = { 0,0 };
+	DWORD dw;
+	FillConsoleOutputCharacter(g_hScreen[g_nScreenIndex], ' ', 80 * 40, Coor, &dw);
+}
+void ScreenPrint(int x, int y, char* string)
+{
+	DWORD dw;
+	COORD CursorPosition = { x,y };
+	SetConsoleCursorPosition(g_hScreen[g_nScreenIndex], CursorPosition);
+	WriteFile(g_hScreen[g_nScreenIndex], string, strlen(string), &dw, NULL);
+}
+void ScreenRelease()
+{
+	CloseHandle(g_hScreen[0]);
+	CloseHandle(g_hScreen[1]);
+}
+void Release()
+{
+	delete[] FPSTextInfo;
 }
 
 pair<int, int> makeMap()
@@ -51,20 +99,27 @@ pair<int, int> makeMap()
 			flg = false;
 		}
 	}
+	ScreenClear();//system("cls");
+	cout << '\n';
+	cout << '\n';
+	cout << '\n';
+	cout << "          시작하려면 아무 키나 누르세요.  ";
+	//system("mode con cols=20 lines=20"); 콘솔창 크기 변경
 	return { x,y };
 }
 
+
+
 int Input()
 {
-	//prevkey를 통해 이전에 왔던 방향으로 돌아가지 못하게 함
-	if (keyCode != NULL)
-		prev_key = keyCode;
 	keyCode = _getch();
 	return keyCode;
 }
-
 void Tick(int x, int y)
 {
+
+	if (keyCode != NULL)
+		prev_key = keyCode;
 
 	if (keyCode == 'Q' || keyCode == 'q')
 	{
@@ -84,7 +139,6 @@ void Tick(int x, int y)
 		Is_Food_Exist = true;
 	}
 
-	//방향키 w,a,s,d
 	switch (keyCode)
 	{
 	case 'w':
@@ -127,19 +181,18 @@ void Tick(int x, int y)
 	default:
 		break;
 	}
-	//뱀이 자신이나 벽에 닿으면 종료
 	if (Map[player_y][player_x] < 70 && Map[player_y][player_x] > 0) IsRunning = false;
-	//뱀이 가득 차면종료
-	if (Snake_length == (x-2)*(y-2))
+	if (Snake_length == (x - 2) * (y - 2) - 1)
 	{
 		IsRunning = false;
 	}
 }
 void Draw(int x, int y)
 {
+	DWORD dw;
+	string tmp;
 
-
-	system("cls");
+	ScreenClear();
 
 	if (player_y == snake_food / (x - 2) && player_x == snake_food % (x - 2)) {
 		Is_Food_Exist = false;
@@ -155,34 +208,58 @@ void Draw(int x, int y)
 			if (Map[i][j] > 0 && Map[i][j] < 69)
 				Map[i][j]--;
 
-			if (Map[i][j] == 0) printf_s(" ");//cout << ' ';
-			else if (Map[i][j] == INF) printf_s("o");//cout << 'o';
-			else if (Map[i][j] == 70) printf_s("F");//cout << 'F';
+			if (Map[i][j] == 0) tmp.push_back(' ');
+			else if (Map[i][j] == INF) tmp.push_back('o');
+			else if (Map[i][j] == 70) tmp.push_back('F');
 			else if (player_x == j && player_y == i)
-				printf_s("h");// 머리 출력
+				tmp.push_back('@');
 			else
-				printf_s("s");// 몸통 출력
+				tmp.push_back('*');
 		}
-		printf_s("\n");//cout << '\n';
+		tmp.push_back('\n');
 	}
+	
+
+
+
+	if (CurTime - OldTime >= 1000)
+	{
+		OldTime = CurTime;
+		g_numOfFPS = g_numOfFrame;
+		g_numOfFrame = 0;
+	}
+
+
+	strcpy(FPSTextInfo, tmp.c_str());
+	ScreenPrint(0, 0, FPSTextInfo);
+
+
+	ScreenFlipping();
 }
 int main()
 {
-
+	FPSTextInfo = new char[BUF_SIZE];
+	memset(FPSTextInfo, '\0', BUF_SIZE);
 
 	srand((unsigned int)time(NULL));
 	pair<int, int> coord = makeMap();
 
+	ScreenInit();
+	OldTime = clock();
 
 
-	CursorView(false);
+	//CursorView(false);
 
 	while (IsRunning)
 	{
-
+		CurTime = clock();
 		Input();
 		Tick(coord.first, coord.second);
 		Draw(coord.first, coord.second);
 
 	}
+	ScreenRelease();
+	Release();
+
+	return 0;
 }
